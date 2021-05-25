@@ -144,8 +144,11 @@ float tCur, birdVel, birdLen, legAng;
 const float dstFar = 100.;
 const int idWing = 21, idBdy = 22, idEye = 23, idBk = 24, idLeg = 25;
 
+// WATER [
+
 float WaterHt (vec3 p)
 {
+//  return 1.;
   p *= 0.03;
   p += waterDisp;
   float ht = 0.;
@@ -178,6 +181,9 @@ float FbmS (vec2 p)
   }
   return v;
 }
+
+// WATER ]
+
 
 vec3 SkyCol (vec3 ro, vec3 rd)
 {
@@ -221,30 +227,30 @@ float BdWingDf (vec3 p, float dHit)
   vec3 q, qh;
   float d, dd, a, wr;
   float wngFreq = 6.;
-  float wSegLen = 0.15 * birdLen;
-  float wChord = 0.3 * birdLen;
-  float wSpar = 0.03 * birdLen;
-  float fTap = 8.;
+  float wSegLen = .315 * birdLen;
+  float wChord = 0.23 * birdLen;
+  float wSpar = 0.053 * birdLen;
+  float fTap = .7;
   float tFac = (1. - 1. / fTap);
   q = p - vec3 (0., 0., 0.3 * birdLen);
   q.x = abs (q.x) - 0.1 * birdLen;
   float wf = 1.;
-  a = -0.1 + 0.2 * sin (wngFreq * tCur);
+  a = -0.1 + 0.52 * sin (wngFreq * tCur);
   d = dHit;
   qh = q;
-  for (int k = 0; k < 5; k ++) {
-    q.xy = Rot2D (q.xy, a);
+  for (int k = 0; k < 1; k ++) {
+    q.xy = Rot2D (q.xy, a*2.);
     q.x -= wSegLen;
     wr = wf * (1. - 0.5 * q.x / (fTap * wSegLen));
     dd = PrFlatCylDf (q.zyx, wr * wChord, wr * wSpar, wSegLen);
     if (k < 4) {
-      q.x -= wSegLen;
-      dd = min (dd, PrCapsDf (q, wr * wSpar, wr * wChord));
+  //    q.x -= wSegLen;
+  //    dd = min (dd, PrCapsDf (q, wr * wSpar, wr * wChord));
     } else {
-      q.x += wSegLen;
-      dd = max (dd, PrCylDf (q.xzy, wr * wChord, wSpar));
-      dd = min (dd, max (PrTorusDf (q.xzy, 0.98 * wr * wSpar,
-         wr * wChord), - q.x));
+//      q.x += wSegLen;
+//      dd = max (dd, PrCylDf (q.xzy, wr * wChord, wSpar));
+//      dd = min (dd, max (PrTorusDf (q.xzy, 0.98 * wr * wSpar,
+//         wr * wChord), - q.x));
     }
     if (dd < d) { d = dd;  qh = q; }
     a *= 1.03;
@@ -320,7 +326,7 @@ float BirdDf (vec3 p, float dHit)
 {
   dHit = BdWingDf (p, dHit);
   dHit = BdBodyDf (p, dHit);
-  dHit = BdFootDf (p, dHit);
+//  dHit = BdFootDf (p, dHit);
   return dHit;
 }
 
@@ -331,19 +337,26 @@ vec4 BirdCol (vec3 n)
   int id = idObj - 256 * ig;
   float spec = 1.;
   if (id == idWing) {
+
     float gw = 0.15 * birdLen;
     float w = mod (qHit.x, gw);
     w = SmoothBump (0.15 * gw, 0.65 * gw, 0.1 * gw, w);
     col = mix (vec3 (0.05), vec3 (1.), w);
+    if (col.r < 0.9)
+      col += vec3(1.,1.,0.);
   } else if (id == idEye) {
-    col = vec3 (0., 0.6, 0.);
+
+    col = vec3 (0., 0., 1.);
     spec = 5.;
+  
   } else if (id == idBdy) {
+
     vec3 nn;
     if (ig == 1) nn = birdMat[0] * n;
     else nn = birdMat[1] * n;
     col = mix (mix (vec3 (1.), vec3 (0.1), smoothstep (0.5, 1., nn.y)), vec3 (1.),
        1. - smoothstep (-1., -0.7, nn.y));
+    col.rg *= 2.;
   } else if (id == idBk) {
     col = vec3 (1., 1., 0.);
   } else if (id == idLeg) {
@@ -397,8 +410,8 @@ vec3 ShowScene (vec3 ro, vec3 rd)
   if (rd.y < 0. && dstHit >= dstFar) {
     float dw = - (ro.y - htWat) / rd.y;
     ro += dw * rd;
-    rd = reflect (rd, WaterNf (ro, dw));
-    ro += 0.01 * rd;
+//    rd = reflect (rd, WaterNf (ro, dw));
+//    ro += 0.01 * rd;
     idObj = -1;
     dstHit = ObjRay (ro, rd);
     reflFac *= 0.7;
@@ -407,7 +420,7 @@ vec3 ShowScene (vec3 ro, vec3 rd)
   if (idObj < 0) dstHit = dstFar;
   if (dstHit >= dstFar) {
 //    col = reflFac * SkyCol (ro, rd);
-//    col = vec3(0.,0.1,0.5);
+    col = vec3(0.,0.1,0.5);
     col = vec3(0.,0.0,0.1);
   }
   else {
@@ -539,9 +552,8 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord )
   vec3 col = ShowScene (ro, rd);
   fragColor = vec4 (col, 1.);
 
-  fragColor.a *= col.r > 0.1 ? 2. : 0.2;
-  fragColor.b = 0.;
-//  fragColor.rg = vec2(fragColor.a);
+  fragColor.a *= col.r > 0.1 ? 2. : 0.;
+//  fragColor.rg *= vec2(fragColor.a);
 //  fragColor.a = 0.;
 //  fragColor.a = col.b==0. ? 1. : 0.;
 }

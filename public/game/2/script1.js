@@ -661,6 +661,311 @@ async function createScene4(scene)
 }
 
 // SCENE 4 ]
+// SCENE 5 [
+
+var createScene5 = async function() {
+    var scene = new BABYLON.Scene(engine);
+
+    var camera = new BABYLON.ArcRotateCamera("Camera", -3*Math.PI/8,  3*Math.PI/8, 80, BABYLON.Vector3.Zero(), scene);
+
+    camera.attachControl(canvas, false);
+    
+    // lights
+    var light = new BABYLON.HemisphericLight("light1", new BABYLON.Vector3(50, 50, 0), scene);
+    light.intensity = 0.8;
+    
+    
+    //creates a coordinate system 
+    var coordSystem = function(vec3) {  //vec3 none zero Vector3				
+        var y_ = vec3.normalize();
+        if(Math.abs(vec3.x) == 0 && Math.abs(vec3.y) == 0) {
+            var x_ = new BABYLON.Vector3(vec3.z, 0, 0).normalize();
+        }
+        else {
+            var x_ = new BABYLON.Vector3(vec3.y, -vec3.x, 0).normalize();
+        }
+        var z_ = BABYLON.Vector3.Cross(x_, y_);
+        return{x:x_, y:y_, z:z_};
+    }
+
+    //randomize a value v +/- p*100% of v
+    var r_pct = function(v, p) {
+        if(p==0) {
+            return v;
+        }
+        
+        return (1 + (1 - 2*Math.random())*p)*v;
+    }
+    
+    var green = new BABYLON.StandardMaterial("green", scene);
+    //green.emissiveColor = new BABYLON.Color3(0,1,0);
+    green.diffuseColor = new BABYLON.Color3(0,1,0);
+    
+    var dark_green = new BABYLON.StandardMaterial("dark_green", scene);
+    dark_green.emissiveColor = new BABYLON.Color3(1,1,0.25);
+    dark_green.diffuseColor = new BABYLON.Color3(1,1,0.25);
+    
+    //Texture for tree
+    var bark = new BABYLON.StandardMaterial("bark", scene);
+    bark.emissiveTexture = new BABYLON.Texture("https://upload.wikimedia.org/wikipedia/commons/thumb/d/da/Bark_texture_wood.jpg/800px-Bark_texture_wood.jpg", scene);
+    bark.diffuseTexture = new BABYLON.Texture("https://upload.wikimedia.org/wikipedia/commons/thumb/d/da/Bark_texture_wood.jpg/800px-Bark_texture_wood.jpg", scene);
+    bark.diffuseTexture.uScale = 2.0;//Repeat 5 times on the Vertical Axes
+    bark.diffuseTexture.vScale = 2.0;//Repeat 5 times on the Horizontal Axes
+    bark.specularColor = new BABYLON.Color3(0,0,0);
+    
+    //Texture for ground
+    var grass = new BABYLON.StandardMaterial("grass", scene);
+    grass.diffuseTexture = new BABYLON.Texture("textures/grass.jpg", scene);
+    grass.diffuseTexture.uScale = 5.0;//Repeat 5 times on the Vertical Axes
+    grass.diffuseTexture.vScale = 5.0;//Repeat 5 times on the Horizontal Axes
+    
+    var PHI = 2/(1+Math.sqrt(5)); //golden ratio for scale				
+    
+    var uv=[];
+            
+    var createBranch = function(branch_at, branch_sys, branch_length, branch_taper, branch_slices, bow_freq, bow_height, cross_section_radius) {                                                          
+        //cross section in the branch_sys.x and branch_sys.z plane to extrude in the branch_sys.y direction
+        var cross_section_paths =  [];
+        var core_point;
+        var core_path = [];                
+        var path;
+        var xsr;
+        var radii = [];
+        var a_sides = 12;
+        for(var a = 0; a<a_sides; a++) {
+            cross_section_paths[a] = [];
+        }	
+        
+        var d_slices = 20;
+        var d_slices_length;									
+                        
+        for(var d = 0; d<branch_slices; d++) {
+            d_slices_length = d/branch_slices;	
+            core_point = branch_sys.y.scale(d_slices_length*branch_length);
+            //add damped wave along branch 
+            core_point.addInPlace(branch_sys.x.scale(bow_height*Math.exp(-d_slices_length)*Math.sin(bow_freq*d_slices_length*Math.PI)));		
+            //set core start at spur position.
+            core_point.addInPlace(branch_at);
+            core_path[d] = core_point;
+            
+            //randomize radius by +/- 40% of radius and taper to branch_taper*100% of radius  at top							
+            xsr = cross_section_radius*(1 + (0.4*Math.random() - 0.2))*(1 - (1-branch_taper)*d_slices_length);	
+            radii.push(xsr);
+        
+            for(var a = 0; a<a_sides; a++) {
+                theta = a*Math.PI/6;					
+                //path followed by one point on cross section in branch_sys.y direction
+                path = branch_sys.x.scale(xsr*Math.cos(theta)).add(branch_sys.z.scale(xsr*Math.sin(theta)));
+                //align with core
+                path.addInPlace(core_path[d]);
+                cross_section_paths[a].push(path);                                                        							
+            }
+        
+        }
+
+        //cap end
+        for(var a = 0; a<a_sides; a++) {
+            cross_section_paths[a].push(core_path[core_path.length-1]);
+        } 
+        
+        var branch = BABYLON.MeshBuilder.CreateRibbon("branch", {pathArray: cross_section_paths, closeArray:true}, scene);
+        branch.material = bark;	
+
+        return {branch:branch, core:core_path, radii:radii};
+    } 
+    
+    var createTreeBase = function(trunk_height, trunk_taper, trunk_slices, boughs, forks, fork_angle, fork_ratio, bow_freq, bow_height) {                                                   
+        var trunk_direction = new BABYLON.Vector3(0, 1, 0);
+        
+        var branch;
+        
+        var trunk_sys = coordSystem(trunk_direction);                    
+        var trunk_root_at = new BABYLON.Vector3(0, 0, 0);
+        var tree_branches = [];
+        var tree_paths = [];
+        var tree_radii = [];
+        var tree_directions = [];
+        
+        var trunk = createBranch(trunk_root_at, trunk_sys, trunk_height, trunk_taper, trunk_slices, 1, bow_height, 1); 
+        tree_branches.push(trunk.branch);
+        var core_path = trunk.core;
+        tree_paths.push(core_path);
+        tree_radii.push(trunk.radii);
+        tree_directions.push(trunk_sys);
+        
+        var core_top = core_path.length - 1;
+        var top_point = core_path[core_top];
+
+        var fork_turn = 2*Math.PI/forks;
+
+        var fork_branch_direction, fork_branch_sys, fork_core;
+        var bough_direction, bough_sys, bough_core_path;
+        var turn, bough_turn, bough_top, bough;
+        for(var f=0; f<forks; f++) {                       
+            turn = r_pct(f*fork_turn, 0.25);						
+            fork_branch_direction = trunk_sys.y.scale(Math.cos(r_pct(fork_angle,0.15))).add(trunk_sys.x.scale(Math.sin(r_pct(fork_angle,0.15))*Math.sin(turn))).add(trunk_sys.z.scale(Math.sin(r_pct(fork_angle,0.15))*Math.cos(turn)));
+            fork_branch_sys = coordSystem(fork_branch_direction);                       										 
+            branch = createBranch(top_point, fork_branch_sys, trunk_height*fork_ratio, trunk_taper, trunk_slices, bow_freq, bow_height*PHI, trunk_taper);
+            bough_core_path = branch.core;
+            bough_top = bough_core_path[bough_core_path.length - 1];
+            tree_branches.push(branch.branch);
+            tree_paths.push(branch.core);
+            tree_radii.push(branch.radii);
+            tree_directions.push(fork_branch_sys);
+            if(boughs > 1) {
+                for(var k =0; k<forks; k++) {
+                    bough_turn = r_pct(k*fork_turn, 0.25);
+                    bough_direction = fork_branch_sys.y.scale(Math.cos(r_pct(fork_angle,0.15))).add(fork_branch_sys.x.scale(Math.sin(r_pct(fork_angle,0.15))*Math.sin(bough_turn))).add(fork_branch_sys.z.scale(Math.sin(r_pct(fork_angle,0.15))*Math.cos(bough_turn)));
+                    bough_sys = coordSystem(bough_direction);                       										 
+                    bough = createBranch(bough_top, bough_sys, trunk_height*fork_ratio*fork_ratio, trunk_taper, trunk_slices, bow_freq, bow_height*PHI*PHI, trunk_taper*trunk_taper);
+                    tree_branches.push(bough.branch);
+                    tree_paths.push(bough.core);
+                    tree_radii.push(branch.radii);
+                    tree_directions.push(bough_sys);
+                }
+            }    
+        }
+        var tree = BABYLON.Mesh.MergeMeshes(tree_branches);
+        return {tree:tree, paths:tree_paths, radii:tree_radii, directions:tree_directions};
+    }
+
+    var createTree = function(trunk_height, trunk_taper, trunk_slices, boughs, forks, fork_angle, fork_ratio, bow_freq, bow_height, leaves_on_branch, leaf_wh_ratio) {                    
+        if(!(boughs ==1 || boughs ==2)) {
+            boughs = 1;
+        }                    
+        var base = createTreeBase(trunk_height, trunk_taper, trunk_slices, boughs, forks, fork_angle, fork_ratio, bow_freq, bow_height);                    
+        var branch_length = trunk_height*Math.pow(fork_ratio, boughs);
+        var leaf_gap = branch_length/(2 * leaves_on_branch);
+        var leaf_width = 1.5*Math.pow(trunk_taper, boughs - 1);
+        var leaf = BABYLON.MeshBuilder.CreateDisc("leaf", {radius: leaf_width/2, tessellation:12, sideOrientation:BABYLON.Mesh.DOUBLESIDE}, scene );
+        //leaf.scaling.y = 1/leaf_wh_ratio;
+        var leaves_SPS = new BABYLON.SolidParticleSystem("leaveSPS", scene, {updatable: false});
+        var set_leaves = function(particle, i, s) {
+            var a = Math.floor(s/(2*leaves_on_branch));
+            if(boughs == 1) {
+                a++;
+            }
+            else {
+                a = 2 + a % forks + Math.floor(a / forks)*(forks + 1);
+            }
+            var j = s % (2*leaves_on_branch);
+            var g =(j*leaf_gap + 3*leaf_gap/2)/branch_length; 
+            //var gp =((j - 1)*leaf_gap + 3*leaf_gap/2)/branch_length;                                             
+            var upper = Math.ceil(trunk_slices*g);                      
+            if(upper > base.paths[a].length - 1) {
+                upper = base.paths[a].length - 1;
+            }
+            var lower = upper - 1; 
+            var gl = lower/(trunk_slices - 1);
+            var gu = upper/(trunk_slices - 1);                     
+            var px = base.paths[a][lower].x  + (base.paths[a][upper].x - base.paths[a][lower].x)*(g - gl)/(gu - gl);
+            var py = base.paths[a][lower].y  + (base.paths[a][upper].y - base.paths[a][lower].y)*(g - gl)/(gu - gl);
+            var pz = base.paths[a][lower].z  + (base.paths[a][upper].z - base.paths[a][lower].z)*(g - gl)/(gu - gl);                                                                                             
+            particle.position = new BABYLON.Vector3(px, py + (0.6*leaf_width/leaf_wh_ratio + base.radii[a][upper])*(2*(s % 2) - 1), pz); 
+            particle.rotation.z = Math.random()*Math.PI/4 ;
+            particle.rotation.y = Math.random()*Math.PI/2 ;
+            particle.rotation.z = Math.random()*Math.PI/4 ;
+            particle.scale.y = 1/leaf_wh_ratio;
+        }
+        
+        leaves_SPS.addShape(leaf, 2*leaves_on_branch*Math.pow(forks, boughs), {positionFunction:set_leaves});                  
+        var leaves = leaves_SPS.buildMesh();
+        leaves.material = green;
+        leaves.billboard = true;
+        leaf.dispose();
+        var axis_y = new BABYLON.Vector3(0, 1, 0);
+        var mini_trees_SPS = new BABYLON.SolidParticleSystem("miniSPS", scene, {updatable: false});
+        var mini_leaves_SPS = new BABYLON.SolidParticleSystem("minileavesSPS", scene, {updatable: false});
+        var turns = [];
+        var fork_turn = 2*Math.PI/forks;
+        for(var f=0; f<Math.pow(forks, boughs + 1); f++) {
+            turns.push(r_pct(Math.floor(f / Math.pow(forks, boughs)) * fork_turn, 0.2))
+        }
+
+        var set_mini_trees = function(particle, i, s) {
+            var a = s % Math.pow(forks, boughs);
+            if(boughs == 1) {
+                a++;
+            }
+            else {
+                a = 2 + a % forks + Math.floor(a / forks)*(forks + 1);
+            }
+            var mini_sys = base.directions[a];                     
+            var mini_top = new BABYLON.Vector3(base.paths[a][base.paths[a].length - 1].x, base.paths[a][base.paths[a].length - 1].y, base.paths[a][base.paths[a].length - 1].z);                       
+            var turn = turns[s];                                             
+            var mini_direction = mini_sys.y.scale(Math.cos(r_pct(fork_angle,0))).add(mini_sys.x.scale(Math.sin(r_pct(fork_angle,0))*Math.sin(turn))).add(mini_sys.z.scale(Math.sin(r_pct(fork_angle,0))*Math.cos(turn)));
+            var axis  = BABYLON.Vector3.Cross(BABYLON.Axis.Y, mini_direction);
+            var theta = Math.acos(BABYLON.Vector3.Dot(mini_direction, BABYLON.Axis.Y)/mini_direction.length());
+            particle.scale = new BABYLON.Vector3(Math.pow(trunk_taper, boughs + 1), Math.pow(trunk_taper, boughs + 1), Math.pow(trunk_taper, boughs + 1));
+            particle.quaternion = BABYLON.Quaternion.RotationAxis(axis, theta);
+            particle.position = mini_top;   
+        }
+        
+        turns = [];
+        var places =[];
+        var bplen = base.paths.length;
+        var bp0len = base.paths[0].length;
+        for(var b=0; b<branches; b++) {
+            turns.push(2*Math.PI*Math.random() - Math.PI);
+            places.push([Math.floor(Math.random()*bplen), Math.floor(Math.random()*(bp0len - 1) + 1)] )
+        }
+        
+        var setBranches = function(particle, i, s) {                       
+            var a = places[s][0];
+            var b = places[s][1];                        
+            var mini_sys = base.directions[a];                       
+            var mini_place = new BABYLON.Vector3(base.paths[a][b].x, base.paths[a][b].y, base.paths[a][b].z);
+            mini_place.addInPlace(mini_sys.z.scale(base.radii[a][b]/2));                        
+            var turn = turns[s];                                             
+            var mini_direction = mini_sys.y.scale(Math.cos(r_pct(branch_angle,0))).add(mini_sys.x.scale(Math.sin(r_pct(branch_angle,0))*Math.sin(turn))).add(mini_sys.z.scale(Math.sin(r_pct(branch_angle,0))*Math.cos(turn)));
+            var axis  = BABYLON.Vector3.Cross(BABYLON.Axis.Y, mini_direction);
+            var theta = Math.acos(BABYLON.Vector3.Dot(mini_direction, BABYLON.Axis.Y)/mini_direction.length());
+            particle.scale = new BABYLON.Vector3(Math.pow(trunk_taper, boughs + 1), Math.pow(trunk_taper, boughs + 1), Math.pow(trunk_taper, boughs + 1));
+            particle.quaternion = BABYLON.Quaternion.RotationAxis(axis, theta);                      
+            particle.position = mini_place;                     
+        }
+                            
+        mini_trees_SPS.addShape(base.tree, Math.pow(forks, boughs + 1), {positionFunction:set_mini_trees});
+        mini_trees_SPS.addShape(base.tree, branches, {positionFunction:setBranches});
+        var tree_crown = mini_trees_SPS.buildMesh();
+        tree_crown.material = bark;
+        mini_leaves_SPS.addShape(leaves, Math.pow(forks, boughs + 1), {positionFunction:set_mini_trees});
+        mini_leaves_SPS.addShape(leaves, branches, {positionFunction:setBranches});                   
+        var leaves_crown = mini_leaves_SPS.buildMesh();
+        leaves.dispose();
+        leaves_crown.material = green;
+        
+        var root = BABYLON.MeshBuilder.CreateBox("", {}, scene);
+        root.isVisible = false;
+        base.tree.parent = root;
+        tree_crown.parent = root;
+        leaves_crown.parent = root;
+        
+        return root;
+    }
+    
+    
+    var trunk_height = 20;
+    var trunk_taper = 0.6;
+    var trunk_slices = 5;
+    var boughs = 2; // 1 or 2
+    var forks = 4;
+    var fork_angle = Math.PI/4;
+    var fork_ratio = PHI;
+    var branch_angle = Math.PI/3;
+    var bow_freq = 2;
+    var bow_height = 3.5;
+    var branches = 40;
+    var leaves_on_branch = 5;
+    var leaf_wh_ratio = 0.5;
+    
+    var tree = createTree(trunk_height, trunk_taper, trunk_slices, boughs, forks, fork_angle, fork_ratio, bow_freq, bow_height, leaves_on_branch, leaf_wh_ratio);				               
+    tree.position.y = -10;
+
+    return scene;
+};
+
+// SCENE 5 ]
 // INIT [
 
 async function init() {
@@ -668,6 +973,8 @@ async function init() {
 //            let scene = await createScene2();
 //    let scene = await createScene3();
     let scene = await createScene4();
+//    let scene = await createScene5();
+
 
     let xr = await setupAR(scene);
     if (!xr) {
@@ -678,14 +985,17 @@ async function init() {
 
 window.onload = function ()
 {
-//   setup();
-    setup1()
+   setup();
+//    setup1()
 }
 
 async function setup1() {
     canvas = document.getElementById("renderCanvas");
     engine = new BABYLON.Engine(canvas, true);
-    var scene = await createScene4();
+    
+//    var scene = await createScene4();
+    let scene = await createScene5();
+
     let xr = await setupAR(scene);
     if (!xr) {
 //        return;

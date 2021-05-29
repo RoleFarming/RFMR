@@ -566,5 +566,65 @@ void main()
 
         
     </script>
+
+    <script id="shader3" type="x-shader/x-fragment">
+precision highp float;
+
+#define iTime CC_Time[0]*20.
+#define iResolution vec2(768./1.,1024./1.) 
+#define iMouse vec2(0.)
+
+#define SS(a,b,t) smoothstep(a,b,t)
+#define PAI 3.14159265
+
+void mainImage( out vec4 O, in vec2 C )
+{
+    float t=iTime;
+    vec2 uv = (C-.5*iResolution.xy)/iResolution.y;
+    vec2 polar=vec2(atan(-uv.y,-uv.x)/6.2832+.5,length(uv));
+//polar.y = 1.;
+    //glow
+    O.rgb=SS(.4,.3,polar.y)*vec3(.1,.1,.1)*1.3;
+    
+    //spiral
+    float petalNum=5.;
+    float st=sin(t);
+    float cx=(polar.x+st)*petalNum;
+    float dx=cx+polar.y*st*19.;//distort
+    float y=min(fract(dx),fract(1.-dx));
+    float len=.3;
+    float musk=SS(0.,.02/polar.y,y*len-polar.y+.2);
+    O.rgb*=1.-musk;
+    O.rgb+=musk*vec3(.7,.1,.1);
+    
+    //outlines
+    float lineNum=10.;
+    for(float i=0.;i<lineNum-.1;i+=1.0)
+        O.rgb+=SS(.012*fract(cx*sign(-st)),0.,abs(polar.y+sin(t+PAI/lineNum*i*.25)*.2-.56))*vec3(.3,.1,.1);
+        
+}
+
+void main()
+{
+  mainImage(gl_FragColor, gl_FragCoord.xy);
+  gl_FragColor.a = 1.;
+  gl_FragColor.g = gl_FragColor.r*2.;
+}
+    </script>
+    <script id="shader4" type="x-shader/x-fragment">
+    </script>
+    <script id="shader5" type="x-shader/x-fragment">
+    </script>
+    <script id="shader6" type="x-shader/x-fragment">
+    </script>
+    <script id="shader7" type="x-shader/x-fragment">
+    </script>
+    <script id="shader8" type="x-shader/x-fragment">
+    </script>
+    <script id="shader9" type="x-shader/x-fragment">
+    </script>
+    <script id="shader10" type="x-shader/x-fragment">
+    </script>
+
 </body>
 </html>
